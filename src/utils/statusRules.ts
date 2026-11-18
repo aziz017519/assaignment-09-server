@@ -1,0 +1,60 @@
+import type { BookingStatus } from '../types/models';
+import { badRequest } from './errors';
+
+export type StatusActor = 'technician' | 'customer';
+
+type Transition = {
+  next: BookingStatus;
+  actor: StatusActor;
+  requiresFinalAmount?: boolean;
+};
+
+export const ACTIVE_BOOKING_STATUSES: readonly BookingStatus[] = [
+  'requested',
+  'accepted',
+  'in-progress',
+];
+
+export const FINAL_BOOKING_STATUSES: readonly BookingStatus[] = ['rejected', 'cancelled', 'completed'];
+
+const TRANSITIONS: readonly Transition[] = [
+  { next: 'accepted', actor: 'technician' },
+  { next: 'rejected', actor: 'technician' },
+  { next: 'cancelled', actor: 'customer' },
+  { next: 'in-progress', actor: 'technician' },
+  { next: 'completed', actor: 'technician', requiresFinalAmount: true },
+];
+
+const CURRENT_STATUSES: readonly BookingStatus[] = ['requested', 'accepted', 'in-progress'];
+
+export function findTransition(
+  current: BookingStatus,
+  next: BookingStatus,
+): Transition | undefined {
+  if (!CURRENT_STATUSES.includes(current)) return undefined;
+  return TRANSITIONS.find(
+    (transition) =>
+      transition.next === next &&
+      (current === 'requested'
+        ? ['accepted', 'rejected', 'cancelled'].includes(next)
+        : current === 'accepted'
+          ? next === 'in-progress'
+          : next === 'completed'),
+  );
+}
+
+export function assertStatusTransition(
+  current: BookingStatus,
+  next: BookingStatus,
+  actor: StatusActor,
+): Transition {
+  const transition = findTransition(current, next);
+  if (!transition || transition.actor !== actor) {
+    throw badRequest(`Invalid status transition: ${current} -> ${next}`);
+  }
+  return transition;
+}
+
+export function isActiveStatus(status: BookingStatus): boolean {
+  return ACTIVE_BOOKING_STATUSES.includes(status);
+}
