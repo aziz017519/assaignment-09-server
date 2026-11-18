@@ -11,7 +11,13 @@ export function validate(schemas: ValidationSchemas): RequestHandler {
   return (req: Request, _res: Response, next: NextFunction) => {
     try {
       if (schemas.body) req.body = schemas.body.parse(req.body);
-      if (schemas.params) req.params = schemas.params.parse(req.params);
+      if (schemas.params) {
+        Object.defineProperty(req, 'params', {
+          value: schemas.params.parse(req.params),
+          writable: true,
+          configurable: true,
+        });
+      }
       if (schemas.query) {
         // Express 5 exposes req.query as a getter; redefine it with the parsed value.
         Object.defineProperty(req, 'query', {

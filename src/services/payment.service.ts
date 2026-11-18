@@ -62,7 +62,8 @@ export async function savePaymentOnce(session: PaymentSession): Promise<PaymentD
       ? session.payment_intent
       : (session.payment_intent?.id ?? session.id);
 
-  const document: Omit<PaymentDoc, '_id'> = {
+  const document: PaymentDoc = {
+    _id: new ObjectId(),
     bookingId,
     serviceTitle: booking.serviceTitle,
     customerName: booking.customerName,

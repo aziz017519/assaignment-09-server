@@ -1,3 +1,4 @@
+import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 import { bookingsCollection, servicesCollection } from '../config/db';
 import { asyncHandler } from '../middlewares/asyncHandler';
@@ -71,7 +72,8 @@ export const createBooking = asyncHandler(async (req, res) => {
     throw conflict('You already have an active request for this service');
   }
 
-  const document: Omit<BookingDoc, '_id'> = {
+  const document: BookingDoc = {
+    _id: new ObjectId(),
     serviceId: service._id,
     serviceTitle: service.title,
     serviceImage: service.image,

@@ -1,4 +1,4 @@
-import type { Filter, Sort } from 'mongodb';
+import { ObjectId, type Filter, type Sort } from 'mongodb';
 import { z } from 'zod';
 import { servicesCollection } from '../config/db';
 import { asyncHandler } from '../middlewares/asyncHandler';
@@ -58,7 +58,7 @@ function assertOwner(service: ServiceDoc, email: string): void {
 }
 
 export const listServices = asyncHandler(async (req, res) => {
-  const { search, category, serviceMode, sort, page, limit } = req.query as z.infer<
+  const { search, category, serviceMode, sort, page, limit } = req.query as unknown as z.infer<
     typeof listServicesQuerySchema
   >;
   const filter: Filter<ServiceDoc> = { ...publicFilter() };
@@ -118,7 +118,8 @@ export const getMyServices = asyncHandler(async (req, res) => {
 export const createService = asyncHandler(async (req, res) => {
   const input = req.body as z.infer<typeof createServiceSchema>;
   const services = await servicesCollection();
-  const document: Omit<ServiceDoc, '_id'> = {
+  const document: ServiceDoc = {
+    _id: new ObjectId(),
     ...input,
     technicianName: req.dbUser?.name ?? req.user!.name ?? '',
     technicianEmail: req.user!.email.toLowerCase(),
