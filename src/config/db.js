@@ -1,0 +1,79 @@
+import { MongoClient } from 'mongodb';
+import { env } from './env.js';
+export const COLLECTIONS = {
+    users: 'users',
+    services: 'services',
+    bookings: 'bookings',
+    payments: 'payments',
+    sessions: 'session',
+    accounts: 'account',
+};
+function getClientPromise() {
+    if (!globalThis.__fixmateClientPromise) {
+        const client = new MongoClient(env.MONGODB_URI, {
+            maxPoolSize: 10,
+            serverSelectionTimeoutMS: 10_000,
+        });
+        globalThis.__fixmateClientPromise = client.connect();
+    }
+    return globalThis.__fixmateClientPromise;
+}
+export async function getDb() {
+    const client = await getClientPromise();
+    return client.db(env.DB_NAME);
+}
+export async function getCollection(name) {
+    const db = await getDb();
+    return db.collection(name);
+}
+export const usersCollection = () => getCollection(COLLECTIONS.users);
+export const servicesCollection = () => getCollection(COLLECTIONS.services);
+export const bookingsCollection = () => getCollection(COLLECTIONS.bookings);
+export const paymentsCollection = () => getCollection(COLLECTIONS.payments);
+export const sessionsCollection = () => getCollection(COLLECTIONS.sessions);
+export const accountsCollection = () => getCollection(COLLECTIONS.accounts);
+export async function createIndexes() {
+    const db = await getDb();
+    await Promise.all([
+        db.collection(COLLECTIONS.users).createIndex({ email: 1 }, { unique: true }),
+        db.collection(COLLECTIONS.payments).createIndex({ stripeSessionId: 1 }, { unique: true }),
+        db.collection(COLLECTIONS.payments).createIndex({ bookingId: 1 }, { unique: true }),
+        db
+            .collection(COLLECTIONS.services)
+            .createIndex({ approvalStatus: 1, isAvailable: 1, createdAt: -1 }),
+        db.collection(COLLECTIONS.services).createIndex({ title: 1 }),
+        db.collection(COLLECTIONS.services).createIndex({ category: 1 }),
+        db.collection(COLLECTIONS.services).createIndex({ title: 'text', category: 'text' }),
+        db.collection(COLLECTIONS.bookings).createIndex({ customerEmail: 1 }),
+        db.collection(COLLECTIONS.bookings).createIndex({ technicianEmail: 1 }),
+        db.collection(COLLECTIONS.bookings).createIndex({
+            serviceId: 1,
+            customerEmail: 1,
+            status: 1,
+        }),
+        db.collection(COLLECTIONS.sessions).createIndex({ token: 1 }, { unique: true }),
+        db
+            .collection(COLLECTIONS.accounts)
+            .createIndex({ providerId: 1, accountId: 1 }, { unique: true }),
+    ]);
+}
+let indexesReady;
+export async function connectDB() {
+    if (!indexesReady) {
+        indexesReady = getDb()
+            .then(() => createIndexes())
+            .catch((error) => {
+            indexesReady = undefined;
+            throw error;
+        });
+    }
+    await indexesReady;
+}
+export async function closeDB() {
+    if (globalThis.__fixmateClientPromise) {
+        const client = await globalThis.__fixmateClientPromise;
+        await client.close();
+        globalThis.__fixmateClientPromise = undefined;
+        indexesReady = undefined;
+    }
+}

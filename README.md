@@ -4,7 +4,7 @@ Backend API for **FixMate**, an on-demand smart device and home appliance repair
 
 - **Live server URL:** `https://fixmate-api.onrender.com` (replace with the deployed URL)
 - **Client repository:** `https://github.com/<your-org>/fixmate-client` (replace with the real client repo link)
-- **Runtime:** Node.js + Express + TypeScript + MongoDB + Stripe (test mode)
+- **Runtime:** Node.js + Express + JavaScript (ESM) + MongoDB + Stripe (test mode)
 
 ## Key features
 
@@ -32,9 +32,9 @@ Useful scripts:
 
 | Script | Description |
 |---|---|
-| `npm run dev` | Start with tsx watch |
+| `npm run dev` | Start with `node --watch` |
 | `npm start` | Start once |
-| `npm run build` | Type-check the project |
+| `npm run build` | Syntax-check the entry point |
 | `npm run seed` | Seed idempotent demo data |
 | `npm test` | Run unit and route tests |
 
@@ -122,9 +122,9 @@ Sign in through the client's BetterAuth endpoint to obtain the bearer token. The
 
 ## npm packages
 
-Runtime: `@better-auth/utils`, `cors`, `dotenv`, `express`, `express-rate-limit`, `helmet`, `jsonwebtoken`, `mongodb`, `stripe`, `zod`.
+Packages: `@better-auth/utils`, `cors`, `dotenv`, `express`, `express-rate-limit`, `helmet`, `jsonwebtoken`, `mongodb`, `stripe`, `zod`.
 
-Development: `@types/cors`, `@types/express`, `@types/jsonwebtoken`, `@types/node`, `tsx`, `typescript`.
+No TypeScript build step: the server runs directly as native ES modules with Node.js.
 
 ## Deployment checklist
 
