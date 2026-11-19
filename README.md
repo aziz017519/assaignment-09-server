@@ -55,6 +55,7 @@ All responses are JSON: success `{ "success": true, "data": ... }`, errors `{ "s
 | GET | `/` | Health check |
 | GET | `/api/services` | `search`, `category`, `serviceMode`, `sort=price_asc\|price_desc\|newest`, `page`, `limit` (use `limit=6` for home featured) |
 | GET | `/api/services/:id` | Approved + available services only |
+| POST | `/api/users/signup` | Server-side signup: only `technician` is honoured, every other role becomes `customer`; admin is seed-only |
 | POST | `/api/webhook/stripe` | Raw body, Stripe signature verified |
 
 ### Customer (`verifyToken`, `verifyCustomer`)

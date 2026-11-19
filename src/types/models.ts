@@ -102,3 +102,14 @@ export type SessionDoc = {
   userId: string;
   expiresAt: Date;
 };
+
+// Managed by BetterAuth (not one of FixMate's four own collections).
+export type AccountDoc = {
+  _id: ObjectId;
+  userId: string;
+  accountId: string;
+  providerId: string;
+  password?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+};

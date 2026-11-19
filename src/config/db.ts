@@ -1,6 +1,13 @@
 import { MongoClient, type Collection, type Db } from 'mongodb';
 import { env } from './env';
-import type { BookingDoc, PaymentDoc, ServiceDoc, SessionDoc, UserDoc } from '../types/models';
+import type {
+  AccountDoc,
+  BookingDoc,
+  PaymentDoc,
+  ServiceDoc,
+  SessionDoc,
+  UserDoc,
+} from '../types/models';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -13,6 +20,7 @@ export const COLLECTIONS = {
   bookings: 'bookings',
   payments: 'payments',
   sessions: 'session',
+  accounts: 'account',
 } as const;
 
 function getClientPromise(): Promise<MongoClient> {
@@ -43,6 +51,7 @@ export const servicesCollection = () => getCollection<ServiceDoc>(COLLECTIONS.se
 export const bookingsCollection = () => getCollection<BookingDoc>(COLLECTIONS.bookings);
 export const paymentsCollection = () => getCollection<PaymentDoc>(COLLECTIONS.payments);
 export const sessionsCollection = () => getCollection<SessionDoc>(COLLECTIONS.sessions);
+export const accountsCollection = () => getCollection<AccountDoc>(COLLECTIONS.accounts);
 
 export async function createIndexes(): Promise<void> {
   const db = await getDb();
@@ -65,6 +74,9 @@ export async function createIndexes(): Promise<void> {
       status: 1,
     }),
     db.collection(COLLECTIONS.sessions).createIndex({ token: 1 }, { unique: true }),
+    db
+      .collection(COLLECTIONS.accounts)
+      .createIndex({ providerId: 1, accountId: 1 }, { unique: true }),
   ]);
 }
 

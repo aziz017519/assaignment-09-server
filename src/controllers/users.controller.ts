@@ -1,5 +1,8 @@
+import { hashPassword } from '@better-auth/utils/password';
+import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 import {
+  accountsCollection,
   bookingsCollection,
   paymentsCollection,
   servicesCollection,
@@ -7,7 +10,9 @@ import {
 } from '../config/db';
 import { asyncHandler } from '../middlewares/asyncHandler';
 import { findUserByEmail } from '../services/user.service';
-import { badRequest, notFound } from '../utils/errors';
+import type { UserDoc } from '../types/models';
+import { badRequest, conflict, notFound } from '../utils/errors';
+import { normalizeSignupRole } from '../utils/roles';
 import { publicUser } from '../utils/sanitize';
 import { sendSuccess } from '../utils/response';
 
@@ -22,6 +27,61 @@ const profileSchema = z
   .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field is required',
   });
+
+const signupSchema = z.object({
+  name: z.string().trim().min(2).max(80),
+  email: z.email(),
+  password: z.string().min(8).max(128),
+  role: z.string().optional(),
+});
+
+export const signup = asyncHandler(async (req, res) => {
+  const input = req.body as z.infer<typeof signupSchema>;
+  const email = input.email.trim().toLowerCase();
+  if (await findUserByEmail(email)) throw conflict('An account with this email already exists');
+
+  const role = normalizeSignupRole(input.role);
+  const now = new Date();
+  const userId = new ObjectId();
+  const user: UserDoc = {
+    _id: userId,
+    name: input.name,
+    email,
+    role,
+    emailVerified: false,
+    plan: 'free',
+    createdAt: now,
+    updatedAt: now,
+  };
+  const users = await usersCollection();
+  const accounts = await accountsCollection();
+  const hashedPassword = await hashPassword(input.password);
+
+  try {
+    await users.insertOne(user);
+    await accounts.insertOne({
+      _id: new ObjectId(),
+      userId: userId.toHexString(),
+      accountId: userId.toHexString(),
+      providerId: 'credential',
+      password: hashedPassword,
+      createdAt: now,
+      updatedAt: now,
+    });
+  } catch (error) {
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: number }).code === 11000
+    ) {
+      throw conflict('An account with this email already exists');
+    }
+    throw error;
+  }
+
+  sendSuccess(res, publicUser(user), 'Account created', 201);
+});
 
 export const getMe = asyncHandler(async (req, res) => {
   const user = await findUserByEmail(req.user!.email);
@@ -120,4 +180,4 @@ export const getRoleStats = asyncHandler(async (req, res) => {
   throw badRequest('Role-specific stats are only available for customers and technicians');
 });
 
-export const userSchemas = { profile: profileSchema };
+export const userSchemas = { profile: profileSchema, signup: signupSchema };

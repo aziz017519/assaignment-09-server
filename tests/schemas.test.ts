@@ -6,6 +6,7 @@ import { bookingSchemas } from '../src/controllers/bookings.controller';
 import { paymentSchemas } from '../src/controllers/payments.controller';
 import { serviceSchemas } from '../src/controllers/services.controller';
 import { userSchemas } from '../src/controllers/users.controller';
+import { normalizeSignupRole } from '../src/utils/roles';
 
 test('booking schema requires a real problem description and valid contact details', () => {
   const base = {
@@ -48,6 +49,14 @@ test('payment and admin schemas reject invalid input', () => {
   assert.doesNotThrow(() => paymentSchemas.create.parse({ bookingId: '507f1f77bcf86cd799439011' }));
   assert.throws(() => adminSchemas.role.parse({ role: 'owner' }));
   assert.doesNotThrow(() => adminSchemas.role.parse({ role: 'technician' }));
+});
+
+test('signup role is normalized to customer or technician on the server', () => {
+  assert.equal(normalizeSignupRole('technician'), 'technician');
+  assert.equal(normalizeSignupRole('admin'), 'customer');
+  assert.equal(normalizeSignupRole(undefined), 'customer');
+  assert.equal(normalizeSignupRole('anything-else'), 'customer');
+  assert.throws(() => userSchemas.signup.parse({ name: 'A', email: 'bad', password: 'short' }));
 });
 
 test('profile updates cannot set a role through mass assignment', () => {
