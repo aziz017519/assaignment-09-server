@@ -351,7 +351,6 @@ async function seedUsers(): Promise<void> {
           name: entry.name,
           email: entry.email,
           emailVerified: true,
-          role: entry.role,
           phone: entry.phone,
           area: entry.area,
           bio: entry.bio,
