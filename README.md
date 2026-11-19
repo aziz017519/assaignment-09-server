@@ -121,9 +121,9 @@ Sign in through the client's BetterAuth endpoint to obtain the bearer token. The
 
 ## npm packages
 
-Runtime: `cors`, `dotenv`, `express`, `express-rate-limit`, `helmet`, `jsonwebtoken`, `mongodb`, `stripe`, `zod`.
+Runtime: `@better-auth/utils`, `cors`, `dotenv`, `express`, `express-rate-limit`, `helmet`, `jsonwebtoken`, `mongodb`, `stripe`, `zod`.
 
-Development: `@better-auth/utils`, `@types/cors`, `@types/express`, `@types/jsonwebtoken`, `@types/node`, `tsx`, `typescript`.
+Development: `@types/cors`, `@types/express`, `@types/jsonwebtoken`, `@types/node`, `tsx`, `typescript`.
 
 ## Deployment checklist
 
