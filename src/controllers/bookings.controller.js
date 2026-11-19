@@ -88,6 +88,43 @@ export const getMyBookings = asyncHandler(async (req, res) => {
     const data = await bookings.find(filter).sort({ createdAt: -1, _id: -1 }).toArray();
     sendSuccess(res, data);
 });
+function localDateKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+export const getBookingStats = asyncHandler(async (req, res) => {
+    const customerEmail = req.user.email.toLowerCase();
+    const bookings = await bookingsCollection();
+    const data = await bookings.find({ customerEmail }).sort({ createdAt: -1 }).toArray();
+
+    const totalRequests = data.length;
+    const activeJobs = data.filter((booking) => ACTIVE_BOOKING_STATUSES.includes(booking.status)).length;
+    const completedJobs = data.filter((booking) => booking.status === 'completed').length;
+
+    const countsByDay = new Map();
+    for (const booking of data) {
+        const created = booking.createdAt instanceof Date ? booking.createdAt : new Date(booking.createdAt ?? 0);
+        if (Number.isNaN(created.getTime()))
+            continue;
+        const key = localDateKey(created);
+        countsByDay.set(key, (countsByDay.get(key) ?? 0) + 1);
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const activity = [];
+    for (let offset = 6; offset >= 0; offset--) {
+        const day = new Date(today);
+        day.setDate(today.getDate() - offset);
+        activity.push({
+            label: day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            count: countsByDay.get(localDateKey(day)) ?? 0,
+        });
+    }
+
+    sendSuccess(res, { totalRequests, activeJobs, completedJobs, activity });
+});
+
 export const getTechnicianBookings = asyncHandler(async (req, res) => {
     const { status } = req.query;
     const bookings = await bookingsCollection();
