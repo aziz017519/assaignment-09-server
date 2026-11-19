@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
-import { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
 import { ZodError } from 'zod';
 import { env } from '../config/env';
 import { AppError } from '../utils/errors';
@@ -23,12 +23,12 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
     return;
   }
 
-  if (error instanceof TokenExpiredError) {
+  if (error instanceof jwt.TokenExpiredError) {
     sendError(res, 401, 'Token has expired');
     return;
   }
 
-  if (error instanceof JsonWebTokenError) {
+  if (error instanceof jwt.JsonWebTokenError) {
     sendError(res, 401, 'Invalid token');
     return;
   }

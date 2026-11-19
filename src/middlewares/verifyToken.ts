@@ -1,4 +1,4 @@
-import jwt, { TokenExpiredError, type JwtPayload } from 'jsonwebtoken';
+import jwt, { type JwtPayload } from 'jsonwebtoken';
 import { env } from '../config/env';
 import { sessionsCollection } from '../config/db';
 import { findUserById, findUserByEmail } from '../services/user.service';
@@ -33,7 +33,7 @@ async function emailFromJwt(token: string): Promise<string | undefined> {
         if (user) return user.email;
       }
     } catch (error) {
-      if (error instanceof TokenExpiredError) throw unauthorized('Token has expired');
+      if (error instanceof jwt.TokenExpiredError) throw unauthorized('Token has expired');
       // Try the next configured secret.
     }
   }
