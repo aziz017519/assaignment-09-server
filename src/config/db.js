@@ -2,6 +2,7 @@ import { MongoClient } from 'mongodb';
 import { env } from './env.js';
 export const COLLECTIONS = {
     users: 'users',
+    user: 'user', // BetterAuth users created by the Next.js client
     services: 'services',
     bookings: 'bookings',
     payments: 'payments',
@@ -27,6 +28,7 @@ export async function getCollection(name) {
     return db.collection(name);
 }
 export const usersCollection = () => getCollection(COLLECTIONS.users);
+export const authUsersCollection = () => getCollection(COLLECTIONS.user);
 export const servicesCollection = () => getCollection(COLLECTIONS.services);
 export const bookingsCollection = () => getCollection(COLLECTIONS.bookings);
 export const paymentsCollection = () => getCollection(COLLECTIONS.payments);

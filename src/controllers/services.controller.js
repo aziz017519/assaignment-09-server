@@ -6,6 +6,7 @@ import { forbidden, notFound } from '../utils/errors.js';
 import { parseObjectId } from '../utils/objectId.js';
 import { sendSuccess } from '../utils/response.js';
 import { escapeRegex } from '../utils/search.js';
+import { findUserByEmail } from '../services/user.service.js';
 const categorySchema = z.enum([
     'Smartphone',
     'Laptop & PC',
@@ -79,12 +80,31 @@ export const listServices = asyncHandler(async (req, res) => {
         totalPages: Math.ceil(total / limit),
     });
 });
+function technicianFromUser(user, service) {
+    if (!user)
+        return null;
+    return {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        image: user.image ?? null,
+        area: user.area ?? service.serviceArea,
+        bio: user.bio,
+    };
+}
 export const getServiceById = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const services = await servicesCollection();
     const service = await services.findOne({ _id: parseObjectId(id, 'service id'), ...publicFilter() });
     if (!service)
         throw notFound('Service not found');
+    // MongoDB has no join; attach the technician account so the details page
+    // can show name, avatar and area even for services without a nested copy.
+    if (service.technicianEmail) {
+        const user = await findUserByEmail(service.technicianEmail);
+        if (user)
+            service.technician = technicianFromUser(user, service);
+    }
     sendSuccess(res, service);
 });
 export const getMyServices = asyncHandler(async (req, res) => {
