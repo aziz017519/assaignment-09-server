@@ -8,6 +8,8 @@ import { badRequest, conflict, notFound } from '../utils/errors.js';
 import { normalizeSignupRole } from '../utils/roles.js';
 import { publicUser } from '../utils/sanitize.js';
 import { sendSuccess } from '../utils/response.js';
+// Legacy payments have no `type`; they are all booking payments.
+const bookingPaymentFilter = { $or: [{ type: 'booking' }, { type: { $exists: false } }] };
 const profileSchema = z
     .object({
     name: z.string().trim().min(2).max(80).optional(),
@@ -117,7 +119,7 @@ export const getRoleStats = asyncHandler(async (req, res) => {
     if (user.role === 'customer') {
         const myBookings = await bookings.find({ customerEmail: email }).toArray();
         const payments = await paymentsCollection();
-        const myPayments = await payments.find({ customerEmail: email }).toArray();
+        const myPayments = await payments.find({ customerEmail: email, ...bookingPaymentFilter }).toArray();
         const counts = {
             totalRequests: myBookings.length,
             requested: myBookings.filter((booking) => booking.status === 'requested').length,
@@ -136,7 +138,7 @@ export const getRoleStats = asyncHandler(async (req, res) => {
         const myServices = await services.find({ technicianEmail: email }).toArray();
         const myBookings = await bookings.find({ technicianEmail: email }).toArray();
         const payments = await paymentsCollection();
-        const myPayments = await payments.find({ technicianEmail: email }).toArray();
+        const myPayments = await payments.find({ technicianEmail: email, ...bookingPaymentFilter }).toArray();
         const counts = {
             totalServices: myServices.length,
             approvedServices: myServices.filter((service) => service.approvalStatus === 'approved').length,

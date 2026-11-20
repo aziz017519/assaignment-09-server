@@ -9,7 +9,8 @@ export function publicUser(user) {
         phone: user.phone ?? null,
         area: user.area ?? null,
         bio: user.bio ?? null,
-        plan: user.plan ?? 'free',
+        // The plan is a technician-only concept; never leak it to customers.
+        ...(user.role === 'technician' ? { plan: user.plan ?? 'free' } : {}),
         createdAt: user.createdAt ?? null,
     };
 }

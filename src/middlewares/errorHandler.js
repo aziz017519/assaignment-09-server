@@ -15,7 +15,11 @@ export const errorHandler = (error, _req, res, _next) => {
         return;
     }
     if (error instanceof AppError) {
-        sendError(res, error.statusCode, error.message);
+        if (error.code) {
+            sendError(res, error.statusCode, error.message, error.code);
+        } else {
+            sendError(res, error.statusCode, error.message);
+        }
         return;
     }
     if (error instanceof jwt.TokenExpiredError) {

@@ -5,6 +5,10 @@ export function sendSuccess(res, data, message, statusCode = 200) {
         data,
     });
 }
-export function sendError(res, statusCode, message) {
-    return res.status(statusCode).json({ success: false, message });
+export function sendError(res, statusCode, message, code) {
+    return res.status(statusCode).json({
+        success: false,
+        message,
+        ...(code ? { code } : {}),
+    });
 }

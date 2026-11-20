@@ -2,7 +2,8 @@ import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 import { servicesCollection } from '../config/db.js';
 import { asyncHandler } from '../middlewares/asyncHandler.js';
-import { forbidden, notFound } from '../utils/errors.js';
+import { FREE_SERVICE_LIMIT, normalizePlan } from '../services/subscription.service.js';
+import { forbidden, notFound, planLimitReached } from '../utils/errors.js';
 import { parseObjectId } from '../utils/objectId.js';
 import { sendSuccess } from '../utils/response.js';
 import { escapeRegex } from '../utils/search.js';
@@ -118,7 +119,15 @@ export const getMyServices = asyncHandler(async (req, res) => {
 });
 export const createService = asyncHandler(async (req, res) => {
     const input = req.body;
+    const email = req.user.email.toLowerCase();
     const services = await servicesCollection();
+    // The plan is re-read from the database by verifyTechnician, never from the
+    // client. Pro technicians are unlimited; free technicians stop at 3.
+    if (normalizePlan(req.dbUser) !== 'pro') {
+        const serviceCount = await services.countDocuments({ technicianEmail: email });
+        if (serviceCount >= FREE_SERVICE_LIMIT)
+            throw planLimitReached();
+    }
     const document = {
         _id: new ObjectId(),
         ...input,

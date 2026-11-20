@@ -31,6 +31,9 @@ export function createApp() {
         credentials: false,
     }));
     // The webhook needs the untouched raw body for Stripe signature verification.
+    // `/api/webhooks/stripe` is the documented path; the singular alias is kept
+    // for deployments that already registered it with Stripe.
+    app.use('/api/webhooks', express.raw({ type: 'application/json' }), webhookRoutes);
     app.use('/api/webhook', express.raw({ type: 'application/json' }), webhookRoutes);
     app.use(express.json({ limit: '1mb' }));
     app.use('/api', rateLimit({

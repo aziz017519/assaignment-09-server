@@ -34,12 +34,40 @@ export const bookingsCollection = () => getCollection(COLLECTIONS.bookings);
 export const paymentsCollection = () => getCollection(COLLECTIONS.payments);
 export const sessionsCollection = () => getCollection(COLLECTIONS.sessions);
 export const accountsCollection = () => getCollection(COLLECTIONS.accounts);
+// Booking payments always have a bookingId/sessionId; subscription payments do
+// not. Partial indexes keep the old uniqueness guarantees without rejecting a
+// second document that simply omits those fields.
+async function ensurePaymentIndexes(db) {
+    const payments = db.collection(COLLECTIONS.payments);
+    const existing = await payments.indexes();
+    const partialIndexes = ['stripeSessionId_1', 'bookingId_1', 'stripeInvoiceId_1'];
+    for (const name of partialIndexes) {
+        const index = existing.find((item) => item.name === name);
+        if (index && !index.partialFilterExpression) {
+            await payments.dropIndex(name);
+        }
+    }
+    await Promise.all([
+        payments.createIndex(
+            { stripeSessionId: 1 },
+            { unique: true, partialFilterExpression: { stripeSessionId: { $exists: true } } },
+        ),
+        payments.createIndex(
+            { bookingId: 1 },
+            { unique: true, partialFilterExpression: { bookingId: { $exists: true } } },
+        ),
+        payments.createIndex(
+            { stripeInvoiceId: 1 },
+            { unique: true, partialFilterExpression: { stripeInvoiceId: { $exists: true } } },
+        ),
+        payments.createIndex({ userId: 1, type: 1, paidAt: -1 }),
+    ]);
+}
 export async function createIndexes() {
     const db = await getDb();
+    await ensurePaymentIndexes(db);
     await Promise.all([
         db.collection(COLLECTIONS.users).createIndex({ email: 1 }, { unique: true }),
-        db.collection(COLLECTIONS.payments).createIndex({ stripeSessionId: 1 }, { unique: true }),
-        db.collection(COLLECTIONS.payments).createIndex({ bookingId: 1 }, { unique: true }),
         db
             .collection(COLLECTIONS.services)
             .createIndex({ approvalStatus: 1, isAvailable: 1, createdAt: -1 }),

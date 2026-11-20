@@ -13,9 +13,21 @@ export const createBookingSchema = z.object({
         .string()
         .trim()
         .regex(/^[0-9+\-()\s]{7,20}$/, 'Provide a valid phone number'),
-    address: z.string().trim().min(5).max(300),
-    preferredDate: z.coerce.date(),
-    problemDescription: z.string().trim().min(20).max(2000),
+    address: z.string().trim().min(10, 'Address must be at least 10 characters').max(300),
+    preferredDate: z
+        .string()
+        .min(1, 'preferredDate is required')
+        .refine((value) => /^\d{4}-\d{2}-\d{2}/.test(value), 'preferredDate must be a valid date')
+        .refine((value) => {
+            const [year, month, day] = value.slice(0, 10).split('-').map(Number);
+            const parsed = new Date(year, month - 1, day);
+            return parsed.getFullYear() === year &&
+                parsed.getMonth() === month - 1 &&
+                parsed.getDate() === day;
+        }, 'preferredDate must be a valid date')
+        .refine((value) => value.slice(0, 10) >= localDateKey(new Date()), 'preferredDate must be today or in the future')
+        .transform((value) => new Date(`${value.slice(0, 10)}T00:00:00.000Z`)),
+    problemDescription: z.string().trim().min(10, 'Problem description must be at least 10 characters').max(2000),
 });
 export const listBookingsQuerySchema = z.object({
     status: z
@@ -26,20 +38,12 @@ export const updateStatusSchema = z.object({
     status: z.enum(['requested', 'accepted', 'rejected', 'in-progress', 'completed', 'cancelled']),
     finalAmount: z.coerce.number().positive().optional(),
 });
-function startOfToday() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return today;
-}
 function historyEntry(status) {
     return { status, changedAt: new Date() };
 }
 export const createBooking = asyncHandler(async (req, res) => {
     const input = req.body;
     const customerEmail = req.user.email.toLowerCase();
-    if (input.preferredDate < startOfToday()) {
-        throw badRequest('preferredDate must be today or in the future');
-    }
     const services = await servicesCollection();
     const service = await services.findOne({ _id: parseObjectId(input.serviceId, 'service id') });
     if (!service || service.approvalStatus !== 'approved' || !service.isAvailable) {

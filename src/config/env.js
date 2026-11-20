@@ -12,8 +12,12 @@ const envSchema = z.object({
         .trim()
         .min(16, 'BETTER_AUTH_SECRET must be at least 16 characters'),
     CLIENT_URL: z.url().default('http://localhost:3000'),
+    // Used for Stripe Checkout success/cancel URLs. NEXT_PUBLIC_APP_URL is shared
+    // with the client so local and deployed URLs stay in sync.
+    NEXT_PUBLIC_APP_URL: z.url().default('http://localhost:3000'),
     STRIPE_SECRET_KEY: optionalSecret,
     STRIPE_WEBHOOK_SECRET: optionalSecret,
+    STRIPE_PRO_PRICE_ID: optionalSecret,
     IMGBB_API_KEY: optionalSecret,
     ADMIN_EMAIL: z.email().default('admin@fixmate.test'),
     ADMIN_PASSWORD: z.string().min(8).default('Admin@12345'),
@@ -34,4 +38,16 @@ export function requireStripeConfig() {
         secretKey: env.STRIPE_SECRET_KEY,
         webhookSecret: env.STRIPE_WEBHOOK_SECRET,
     };
+}
+export function requireStripePriceId() {
+    if (!env.STRIPE_PRO_PRICE_ID) {
+        throw new Error('Stripe is not configured. Set STRIPE_PRO_PRICE_ID in .env.');
+    }
+    if (!env.STRIPE_PRO_PRICE_ID.startsWith('price_')) {
+        throw new Error('STRIPE_PRO_PRICE_ID must be a recurring Stripe Price id (price_...), not a product id (prod_...).');
+    }
+    return env.STRIPE_PRO_PRICE_ID;
+}
+export function getAppUrl() {
+    return env.NEXT_PUBLIC_APP_URL || env.CLIENT_URL;
 }

@@ -40,6 +40,7 @@ test('protected routes return 401 without a bearer token', async () => {
         '/api/admin/stats',
         '/api/users/me',
         '/api/payments/my',
+        '/api/payments/verify?session_id=cs_test_missing',
     ]) {
         const response = await fetch(`${baseUrl}${path}`);
         assert.equal(response.status, 401, path);
