@@ -5,6 +5,7 @@ export function publicUser(user) {
         name: user.name,
         email: user.email,
         image: user.image ?? null,
+        emailVerified: Boolean(user.emailVerified),
         role: user.role,
         phone: user.phone ?? null,
         area: user.area ?? null,
