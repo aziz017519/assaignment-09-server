@@ -225,7 +225,7 @@ export const verifyPayment = asyncHandler(async (req, res) => {
             null;
         result.subscription = {
             plan: 'pro',
-            renewalDate: isoOrNull(renewalSeconds) ?? isoOrNull(req.dbUser?.planExpiresAt),
+            renewalDate: isoOrNull(dateFromSeconds(renewalSeconds)) ?? isoOrNull(req.dbUser?.planExpiresAt),
             interval: intervalFrom(session, subscription, invoice),
         };
         if (stripePaid && !stripeFailed) {
