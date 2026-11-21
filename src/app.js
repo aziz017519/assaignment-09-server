@@ -8,11 +8,12 @@ import routes from './routes/index.js';
 import webhookRoutes from './routes/webhook.routes.js';
 import { AppError } from './utils/errors.js';
 import { sendSuccess } from './utils/response.js';
+const normalizeOrigin = (value) => value.replace(/\/$/, '');
 const allowedOrigins = new Set([
     env.CLIENT_URL,
     'http://localhost:3000',
     'http://127.0.0.1:3000',
-]);
+].map(normalizeOrigin));
 export function createApp() {
     const app = express();
     app.set('trust proxy', 1);
@@ -20,7 +21,7 @@ export function createApp() {
     app.use(helmet());
     app.use(cors({
         origin: (origin, callback) => {
-            if (!origin || allowedOrigins.has(origin)) {
+            if (!origin || allowedOrigins.has(normalizeOrigin(origin))) {
                 callback(null, true);
                 return;
             }
@@ -36,6 +37,9 @@ export function createApp() {
     app.use('/api/webhooks', express.raw({ type: 'application/json' }), webhookRoutes);
     app.use('/api/webhook', express.raw({ type: 'application/json' }), webhookRoutes);
     app.use(express.json({ limit: '1mb' }));
+    app.get('/api/health', (_req, res) => {
+        res.status(200).json({ success: true, message: 'API is running' });
+    });
     app.use('/api', rateLimit({
         windowMs: 15 * 60 * 1000,
         limit: 300,

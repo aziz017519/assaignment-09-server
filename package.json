@@ -20,6 +20,9 @@
   ],
   "author": "FixMate",
   "license": "ISC",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
     "@better-auth/utils": "^0.5.1",
     "cors": "^2.8.6",

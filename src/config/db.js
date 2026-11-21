@@ -15,7 +15,11 @@ function getClientPromise() {
             maxPoolSize: 10,
             serverSelectionTimeoutMS: 10_000,
         });
-        globalThis.__fixmateClientPromise = client.connect();
+        globalThis.__fixmateClientPromise = client.connect().catch((error) => {
+            // Allow a later serverless invocation to retry with a fresh client.
+            globalThis.__fixmateClientPromise = undefined;
+            throw error;
+        });
     }
     return globalThis.__fixmateClientPromise;
 }
