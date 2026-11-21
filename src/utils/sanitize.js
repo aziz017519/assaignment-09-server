@@ -5,9 +5,11 @@ export function publicUser(user) {
         name: user.name,
         email: user.email,
         image: user.image ?? null,
-        emailVerified: Boolean(user.emailVerified),
+        avatar: user.image ?? null,
         role: user.role,
+        emailVerified: Boolean(user.emailVerified),
         phone: user.phone ?? null,
+        address: user.address ?? null,
         area: user.area ?? null,
         bio: user.bio ?? null,
         // The plan is a technician-only concept; never leak it to customers.

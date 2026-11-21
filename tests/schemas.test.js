@@ -52,8 +52,31 @@ test('signup role is normalized to customer or technician on the server', () => 
     assert.equal(normalizeSignupRole('anything-else'), 'customer');
     assert.throws(() => userSchemas.signup.parse({ name: 'A', email: 'bad', password: 'short' }));
 });
-test('profile updates cannot set a role through mass assignment', () => {
-    const parsed = userSchemas.profile.parse({ name: 'New Name', role: 'admin', email: 'x@y.test' });
-    assert.deepEqual(parsed, { name: 'New Name' });
+test('profile updates validate shared profile fields and strip mass-assigned fields', () => {
+    const parsed = userSchemas.profile.parse({
+        name: 'New Name',
+        phone: '+8801712345678',
+        address: 'Road 12, Sylhet',
+        area: 'Sylhet',
+        bio: 'Short bio',
+        avatar: 'https://i.ibb.co/example/profile.jpg',
+        photo: 'https://i.ibb.co/example/legacy.jpg',
+        role: 'admin',
+        email: 'x@y.test',
+    });
+    assert.deepEqual(parsed, {
+        name: 'New Name',
+        phone: '+8801712345678',
+        address: 'Road 12, Sylhet',
+        area: 'Sylhet',
+        bio: 'Short bio',
+        avatar: 'https://i.ibb.co/example/profile.jpg',
+        photo: 'https://i.ibb.co/example/legacy.jpg',
+    });
+    assert.throws(() => userSchemas.profile.parse({ name: 'A' }));
+    assert.throws(() => userSchemas.profile.parse({ phone: '12345' }));
+    assert.throws(() => userSchemas.profile.parse({ address: 'x'.repeat(301) }));
+    assert.throws(() => userSchemas.profile.parse({ bio: 'x'.repeat(301) }));
+    assert.throws(() => userSchemas.profile.parse({ avatar: 'not-a-url' }));
     assert.throws(() => userSchemas.profile.parse({}));
 });

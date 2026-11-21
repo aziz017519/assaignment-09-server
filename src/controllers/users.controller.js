@@ -3,20 +3,25 @@ import { ObjectId } from 'mongodb';
 import { z } from 'zod';
 import { accountsCollection, bookingsCollection, paymentsCollection, servicesCollection, usersCollection, } from '../config/db.js';
 import { asyncHandler } from '../middlewares/asyncHandler.js';
-import { findUserByEmail } from '../services/user.service.js';
+import { findUserByEmail, findUserStoreByEmail } from '../services/user.service.js';
 import { badRequest, conflict, notFound } from '../utils/errors.js';
 import { normalizeSignupRole } from '../utils/roles.js';
 import { publicUser } from '../utils/sanitize.js';
 import { sendSuccess } from '../utils/response.js';
 // Legacy payments have no `type`; they are all booking payments.
 const bookingPaymentFilter = { $or: [{ type: 'booking' }, { type: { $exists: false } }] };
+const profilePhonePattern = /^(?:\+8801\d{9}|01\d{9})$/;
 const profileSchema = z
     .object({
     name: z.string().trim().min(2).max(80).optional(),
-    phone: z.string().trim().max(20).optional(),
+    phone: z.string().trim().regex(profilePhonePattern).optional(),
+    address: z.string().trim().max(300).optional(),
     area: z.string().trim().max(120).optional(),
-    bio: z.string().trim().max(500).optional(),
-    image: z.string().trim().max(1000).optional(),
+    bio: z.string().trim().max(300).optional(),
+    // The shared profile form sends `avatar`; keep `photo`/`image` for older clients.
+    avatar: z.url().max(1000).optional(),
+    photo: z.url().max(1000).optional(),
+    image: z.url().max(1000).optional(),
 })
     .refine((value) => Object.keys(value).length > 0, {
     message: 'At least one field is required',
@@ -78,9 +83,26 @@ export const getMe = asyncHandler(async (req, res) => {
     sendSuccess(res, publicUser(user));
 });
 export const updateProfile = asyncHandler(async (req, res) => {
-    const input = req.body;
-    const users = await usersCollection();
-    const result = await users.findOneAndUpdate({ email: req.user.email.toLowerCase() }, { $set: { ...input, updatedAt: new Date() } }, { returnDocument: 'after' });
+    const { name, phone, address, area, bio, avatar, photo, image } = req.body;
+    // BetterAuth-created users live in `user`, not the legacy `users` collection.
+    // verifyToken already restricts this route to the authenticated user's email,
+    // so every role can update only its own profile here.
+    const store = await findUserStoreByEmail(req.user.email);
+    if (!store)
+        throw notFound('User not found');
+    const update = { updatedAt: new Date() };
+    if (name !== undefined) update.name = name;
+    if (phone !== undefined) update.phone = phone;
+    if (address !== undefined) update.address = address;
+    if (area !== undefined) update.area = area;
+    if (bio !== undefined) update.bio = bio;
+    const photoUrl = avatar ?? photo ?? image;
+    if (photoUrl !== undefined) update.image = photoUrl;
+    const result = await store.collection.findOneAndUpdate(
+        { _id: store.user._id },
+        { $set: update },
+        { returnDocument: 'after' },
+    );
     if (!result)
         throw notFound('User not found');
     sendSuccess(res, publicUser(result), 'Profile updated');
