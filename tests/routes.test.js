@@ -38,6 +38,7 @@ test('protected routes return 401 without a bearer token', async () => {
     for (const path of [
         '/api/bookings/my',
         '/api/admin/stats',
+        '/api/technician/stats',
         '/api/users/me',
         '/api/payments/my',
         '/api/payments/verify?session_id=cs_test_missing',
