@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { bookingsCollection, paymentsCollection, servicesCollection, usersCollection, } from '../config/db.js';
 import { asyncHandler } from '../middlewares/asyncHandler.js';
-import { BOOKING_STATUSES } from '../utils/constants.js';
 import { forbidden, notFound } from '../utils/errors.js';
 import { parseObjectId } from '../utils/objectId.js';
 import { publicUser } from '../utils/sanitize.js';
@@ -69,40 +68,86 @@ export const getPayments = asyncHandler(async (_req, res) => {
     const totalRevenue = Number(data.reduce((sum, payment) => sum + payment.amount, 0).toFixed(2));
     sendSuccess(res, { data, totalRevenue });
 });
+const CHART_MONTHS = 6;
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+// Both collections are valid account stores in this project: the Express API
+// uses `users`, while BetterAuth (the Next.js client) uses `user`.
+const accountProjection = {
+    $project: {
+        email: { $toLower: { $ifNull: ['$email', ''] } },
+        role: { $ifNull: ['$role', ''] },
+        createdAt: { $ifNull: ['$createdAt', null] },
+    },
+};
+function chartStartDate() {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (CHART_MONTHS - 1), 1));
+}
+function buildChart(userRows, bookingRows) {
+    const usersByMonth = new Map(userRows.map((row) => [row._id, row.users]));
+    const bookingsByMonth = new Map(bookingRows.map((row) => [row._id, row.bookings]));
+    const now = new Date();
+    return Array.from({ length: CHART_MONTHS }, (_, index) => {
+        const month = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (CHART_MONTHS - 1 - index), 1));
+        const key = `${month.getUTCFullYear()}-${String(month.getUTCMonth() + 1).padStart(2, '0')}`;
+        return {
+            label: MONTH_LABELS[month.getUTCMonth()],
+            users: usersByMonth.get(key) ?? 0,
+            bookings: bookingsByMonth.get(key) ?? 0,
+        };
+    });
+}
 export const getStats = asyncHandler(async (_req, res) => {
-    const [users, services, bookings, payments] = await Promise.all([
-        usersCollection(),
-        servicesCollection(),
-        bookingsCollection(),
-        paymentsCollection(),
+    const start = chartStartDate();
+    const [accountTotals, monthlyUsers, monthlyBookings, pendingServices, totalBookings, revenueRows] = await Promise.all([
+        (await usersCollection()).aggregate([
+            accountProjection,
+            { $unionWith: { coll: 'user', pipeline: [accountProjection] } },
+            { $match: { email: { $ne: '' } } },
+            { $group: { _id: '$email', role: { $first: '$role' } } },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: 1 },
+                    technicians: { $sum: { $cond: [{ $eq: ['$role', 'technician'] }, 1, 0] } },
+                },
+            },
+        ]).toArray(),
+        (await usersCollection()).aggregate([
+            accountProjection,
+            { $unionWith: { coll: 'user', pipeline: [accountProjection] } },
+            { $match: { email: { $ne: '' }, createdAt: { $gte: start } } },
+            { $group: { _id: '$email', createdAt: { $min: '$createdAt' } } },
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m', date: '$createdAt', timezone: 'UTC' } },
+                    users: { $sum: 1 },
+                },
+            },
+        ]).toArray(),
+        (await bookingsCollection()).aggregate([
+            { $match: { createdAt: { $gte: start } } },
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m', date: '$createdAt', timezone: 'UTC' } },
+                    bookings: { $sum: 1 },
+                },
+            },
+        ]).toArray(),
+        (await servicesCollection()).countDocuments({ approvalStatus: 'pending' }),
+        (await bookingsCollection()).countDocuments({}),
+        (await paymentsCollection()).aggregate([
+            { $match: { paymentStatus: 'paid' } },
+            { $group: { _id: null, total: { $sum: { $ifNull: ['$amount', 0] } } } },
+        ]).toArray(),
     ]);
-    const [allUsers, allServices, allBookings, allPayments] = await Promise.all([
-        users.find().toArray(),
-        services.find().toArray(),
-        bookings.find().toArray(),
-        payments.find().toArray(),
-    ]);
-    const bookingsByStatus = Object.fromEntries(BOOKING_STATUSES.map((status) => [
-        status,
-        allBookings.filter((booking) => booking.status === status).length,
-    ]));
     sendSuccess(res, {
-        users: {
-            total: allUsers.length,
-            customers: allUsers.filter((user) => user.role === 'customer').length,
-            technicians: allUsers.filter((user) => user.role === 'technician').length,
-        },
-        services: {
-            total: allServices.length,
-            pending: allServices.filter((service) => service.approvalStatus === 'pending').length,
-            approved: allServices.filter((service) => service.approvalStatus === 'approved').length,
-            rejected: allServices.filter((service) => service.approvalStatus === 'rejected').length,
-        },
-        bookings: { total: allBookings.length, byStatus: bookingsByStatus },
-        payments: {
-            total: allPayments.length,
-            revenue: Number(allPayments.reduce((sum, payment) => sum + payment.amount, 0).toFixed(2)),
-        },
+        totalUsers: accountTotals[0]?.total ?? 0,
+        totalTechnicians: accountTotals[0]?.technicians ?? 0,
+        pendingServices,
+        totalBookings,
+        totalRevenue: Number((revenueRows[0]?.total ?? 0).toFixed(2)),
+        chart: buildChart(monthlyUsers, monthlyBookings),
     });
 });
 export const adminSchemas = {
