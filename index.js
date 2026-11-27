@@ -1,2 +1,2 @@
-// Compatibility entry point for `node index.js` / `nodemon index.js`.
-import './src/server.js';
+import app from './src/app.js';
+export default app;
