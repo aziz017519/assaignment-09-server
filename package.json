@@ -11,6 +11,7 @@
     "seed": "node src/seed/seed.js",
     "cleanup:pro-plan": "node src/scripts/remove-pro-plan-fields.js",
     "migrate:ratings": "node src/scripts/migrate-ratings.js",
+    "migrate:booking-technician": "node src/scripts/migrate-booking-technician.js",
     "seed:technician-overview": "node src/scripts/seed-technician-overview.js",
     "test": "node --test tests/*.test.js"
   },

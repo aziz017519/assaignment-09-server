@@ -9,6 +9,12 @@ import { parseObjectId, toIdString } from '../utils/objectId.js';
 import { hasRating, ratingSummary } from '../utils/ratings.js';
 import { sendSuccess } from '../utils/response.js';
 const idParamSchema = z.object({ id: z.string().min(1) });
+function normalizeEmail(value) {
+    return String(value ?? '').trim().toLowerCase();
+}
+function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 export const createBookingSchema = z.object({
     serviceId: z.string().min(1),
     customerPhone: z
@@ -111,7 +117,11 @@ export const createBooking = asyncHandler(async (req, res) => {
     if (!service || service.approvalStatus !== 'approved' || !service.isAvailable) {
         throw notFound('Service not found or not available');
     }
-    if (service.technicianEmail.toLowerCase() === customerEmail) {
+    const technicianEmail = normalizeEmail(service.technicianEmail);
+    if (!technicianEmail) {
+        throw notFound('Service technician is unavailable');
+    }
+    if (technicianEmail === customerEmail) {
         throw forbidden('You cannot book your own service');
     }
     const bookings = await bookingsCollection();
@@ -131,7 +141,7 @@ export const createBooking = asyncHandler(async (req, res) => {
         category: service.category,
         basePrice: service.basePrice,
         technicianName: service.technicianName,
-        technicianEmail: service.technicianEmail,
+        technicianEmail,
         customerName: req.dbUser?.name ?? req.user.name ?? '',
         customerEmail,
         customerPhone: input.customerPhone,
@@ -291,24 +301,30 @@ export const getBookingStats = asyncHandler(async (req, res) => {
 
 export const getTechnicianBookings = asyncHandler(async (req, res) => {
     const { status } = req.query;
+    const email = normalizeEmail(req.user.email);
     const bookings = await bookingsCollection();
-    const filter = { technicianEmail: req.user.email.toLowerCase(), ...(status ? { status } : {}) };
+    // Anchored and escaped so legacy mixed-case rows remain visible without
+    // turning dots or plus signs in an email into regex wildcards.
+    const filter = {
+        technicianEmail: { $regex: `^${escapeRegExp(email)}$`, $options: 'i' },
+        ...(status ? { status } : {}),
+    };
     const data = await bookings.find(filter).sort({ createdAt: -1, _id: -1 }).toArray();
     sendSuccess(res, data);
 });
 export const updateBookingStatus = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { status, finalAmount } = req.body;
-    const email = req.user.email.toLowerCase();
+    const email = normalizeEmail(req.user.email);
     const bookings = await bookingsCollection();
     const booking = await bookings.findOne({ _id: parseObjectId(id, 'booking id') });
     if (!booking)
         throw notFound('Booking not found');
-    if (booking.technicianEmail.toLowerCase() !== email) {
+    if (normalizeEmail(booking.technicianEmail) !== email) {
         throw forbidden('You can only update your own bookings');
     }
     const transition = assertStatusTransition(booking.status, status, 'technician');
-    const set = { status };
+    const set = { status, technicianEmail: email };
     if (transition.requiresFinalAmount) {
         if (typeof finalAmount !== 'number' || !Number.isFinite(finalAmount) || finalAmount <= 0) {
             throw badRequest('finalAmount greater than 0 is required to complete a job');

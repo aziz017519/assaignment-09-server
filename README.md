@@ -84,8 +84,8 @@ JSON responses use success `{ "success": true, "data": ... }` and errors `{ "suc
 | DELETE | `/api/services/:id` |
 | GET | `/api/services/my` |
 | PATCH | `/api/services/:id/availability` |
-| GET | `/api/bookings/technician` |
-| PATCH | `/api/bookings/:id/status` |
+| GET | `/api/bookings/technician` | Every booking owned by the technician, newest first; optional `status` query filter, no pagination |
+| PATCH | `/api/bookings/:id/status` | Owning technician only; body `{ "status": "accepted" \| "rejected" \| "in-progress" \| "completed" }` (`finalAmount > 0` required to complete) |
 
 ### Admin (`verifyToken`, `verifyAdmin`)
 
@@ -110,7 +110,9 @@ JSON responses use success `{ "success": true, "data": ... }` and errors `{ "suc
 
 ### Status rules
 
-`requested → accepted | rejected | cancelled`, `accepted → in-progress`, `in-progress → completed` (requires `finalAmount > 0`). Only Stripe can mark a completed booking as paid. Invalid transitions return 400; ownership failures return 403.
+`requested → accepted | rejected | cancelled`, `accepted → in-progress`, `in-progress → completed` (requires `finalAmount > 0`). Only Stripe can mark a completed booking as paid. Invalid transitions return 400; ownership failures return 403. Service `approvalStatus` gates public visibility and booking creation; it is never a booking status.
+
+Booking ownership comes from the service document: creation stores `serviceId`, `technicianName` and a lowercased `technicianEmail` from the service, plus `status: "requested"`. No `technicianId` is stored and client-supplied technician/admin fields are ignored. `GET /api/bookings/technician` uses an anchored, escaped case-insensitive match on the normalized email so legacy mixed-case rows remain visible. The technician Accept/Reject client call sends `{ "status": "accepted" }` or `{ "status": "rejected" }`, not `accept`/`reject`.
 
 ### Ratings & invoices
 
@@ -148,6 +150,17 @@ Packages: `@better-auth/utils`, `cors`, `dotenv`, `express`, `express-rate-limit
 
 No TypeScript build step: the server runs directly as native ES modules with Node.js.
 
+## Booking technician migration
+
+Existing bookings can be backfilled/normalized from their service documents:
+
+```bash
+npm run migrate:booking-technician                 # dry-run, no writes
+npm run migrate:booking-technician -- --apply      # apply changes
+```
+
+The script is idempotent: it only sets `technicianEmail`/`technicianName` when they differ from the linked service, lowercases the email, and logs counts only (never emails or other personal data). Missing/invalid service references and services without a technician email are counted in the summary rather than modified.
+
 ## Deployment checklist
 
 - [ ] All environment variables are set on the host; `.env` is not committed.
@@ -159,4 +172,5 @@ No TypeScript build step: the server runs directly as native ES modules with Nod
 - [ ] Invalid status transitions and payment gate rejections verified manually.
 - [ ] Success page + webhook together create only one payment.
 - [ ] `npm run migrate:ratings` has been run once after deploying (idempotent; no new env vars required).
+- [ ] `npm run migrate:booking-technician` dry-run reviewed after deploying; run again with `--apply` if it reports rows to change (idempotent; uses existing MongoDB env vars).
 - [ ] Seed data is live and demo accounts work.
