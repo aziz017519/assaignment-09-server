@@ -36,28 +36,30 @@ Useful scripts:
 | `npm start` | Start once |
 | `npm run build` | Syntax-check the entry point |
 | `npm run seed` | Seed idempotent demo data |
+| `npm run cleanup:pro-plan` | Optional legacy-field cleanup; dry run by default, add `-- --apply` to write |
+| `npm run migrate:ratings` | Rebuild service rating aggregates from reviewed bookings (idempotent) |
 | `npm test` | Run unit and route tests |
 
 ## Environment variables
 
 Names only (see `.env.example` for the template; never commit `.env`):
 
-`PORT`, `MONGODB_URI`, `DB_NAME`, `JWT_SECRET`, `BETTER_AUTH_SECRET`, `CLIENT_URL`, `NEXT_PUBLIC_APP_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRO_PRICE_ID`, `IMGBB_API_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `NODE_ENV`.
+`PORT`, `MONGODB_URI`, `DB_NAME`, `JWT_SECRET`, `BETTER_AUTH_SECRET`, `CLIENT_URL`, `NEXT_PUBLIC_APP_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `IMGBB_API_KEY`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `NODE_ENV`.
 
 - `NEXT_PUBLIC_APP_URL` is the client origin used for Stripe redirect URLs (defaults to `CLIENT_URL`).
-- `STRIPE_PRO_PRICE_ID` is the **recurring** Price used by the technician Pro Checkout session.
 
 ## API overview
 
-All responses are JSON: success `{ "success": true, "data": ... }`, errors `{ "success": false, "message": "..." }`.
+JSON responses use success `{ "success": true, "data": ... }` and errors `{ "success": false, "message": "..." }`. The invoice endpoint is the only binary response (`application/pdf`).
 
 ### Public
 
 | Method | Endpoint | Notes |
 |---|---|---|
 | GET | `/` | Health check |
-| GET | `/api/services` | `search`, `category`, `serviceMode`, `sort=price_asc\|price_desc\|newest`, `page`, `limit` (use `limit=6` for home featured) |
-| GET | `/api/services/:id` | Approved + available services only |
+| GET | `/api/services` | `search`, `category`, `serviceMode`, `sort=price_asc\|price_desc\|newest\|rating_desc`, `page`, `limit` (use `limit=6` for home featured). Every service includes `averageRating` and `ratingCount` |
+| GET | `/api/services/:id` | Approved + available services only; includes `averageRating` and `ratingCount` |
+| GET | `/api/services/:id/reviews` | Public reviews for approved + available services; `page`, `limit`, newest first, first-name-only `customerName` |
 | POST | `/api/users/signup` | Server-side signup: only `technician` is honoured, every other role becomes `customer`; admin is seed-only |
 | POST | `/api/webhook/stripe` | Raw body, Stripe signature verified |
 
@@ -66,7 +68,9 @@ All responses are JSON: success `{ "success": true, "data": ... }`, errors `{ "s
 | Method | Endpoint |
 |---|---|
 | POST | `/api/bookings` |
-| GET | `/api/bookings/my` |
+| GET | `/api/bookings/my` | Adds `rating`, `review`, `reviewedAt` and `canReview` to each booking |
+| POST | `/api/bookings/:id/review` | Paid bookings only, one review per booking |
+| GET | `/api/bookings/:id/invoice` | PDF receipt for a paid booking (`application/pdf`) |
 | PATCH | `/api/bookings/:id/cancel` |
 | POST | `/api/payments/create-checkout-session` |
 | GET | `/api/payments/my` |
@@ -82,10 +86,6 @@ All responses are JSON: success `{ "success": true, "data": ... }`, errors `{ "s
 | PATCH | `/api/services/:id/availability` |
 | GET | `/api/bookings/technician` |
 | PATCH | `/api/bookings/:id/status` |
-| GET | `/api/subscription` | Current plan, service usage, renewal date and Stripe price |
-| GET | `/api/subscription/payments` | Booking + Pro subscription payments for this technician |
-| POST | `/api/subscription/checkout` | Start a Pro Checkout Session; returns `{ url }` |
-| POST | `/api/subscription/portal` | Stripe Billing Portal session; returns `{ url }` |
 
 ### Admin (`verifyToken`, `verifyAdmin`)
 
@@ -108,22 +108,16 @@ All responses are JSON: success `{ "success": true, "data": ... }`, errors `{ "s
 | GET | `/api/users/stats` | Role-specific counts and six-month chart |
 | GET | `/api/payments/verify?session_id=...` | Read-only Checkout Session verification; `metadata.userId` must match the authenticated user |
 
-## Pro Technician Plan (technicians only)
-
-- Free technicians can publish at most **3** services. `POST /api/services` returns `403` with `code: "PLAN_LIMIT_REACHED"` once the limit is reached. Pro technicians are unlimited.
-- Cancelling/expiring Pro sets `plan` back to `free`. Existing services are **kept**; new additions are blocked while at or above 3.
-- Stripe is the source of truth. The success redirect never changes the plan; only signature-verified webhooks do:
-  - `checkout.session.completed` → `plan = 'pro'` plus Stripe customer/subscription IDs
-  - `invoice.payment_succeeded` → one idempotent `payments` row with `type = 'subscription'`, plus `planExpiresAt`
-  - `invoice.payment_failed` → logged only
-  - `customer.subscription.deleted` / `updated` (`canceled`, `unpaid`) → `plan = 'free'`
-- Customer payment queries always filter `type = 'booking'`; Stripe identifiers are never returned to customers.
-- Checkout redirects to the shared success pages (`/dashboard/customer/payments/success` and `/dashboard/technician/subscription/success`). Those pages call `GET /api/payments/verify`, which only reads Stripe + DB state and never upgrades a plan or marks a booking paid.
-- Backfill existing data with `npm run migrate:pro-plan` (idempotent; also reconciles partial unique indexes and fills legacy payment fields).
-
 ### Status rules
 
 `requested → accepted | rejected | cancelled`, `accepted → in-progress`, `in-progress → completed` (requires `finalAmount > 0`). Only Stripe can mark a completed booking as paid. Invalid transitions return 400; ownership failures return 403.
+
+### Ratings & invoices
+
+- `POST /api/bookings/:id/review` accepts `{ "rating": 1-5, "review": "optional text (max 500)" }`, requires a paid booking owned by the caller, and allows exactly one review per booking. It stores `rating`, `review` (or `null`) and `reviewedAt` on the booking, increments the service's `ratingSum`/`ratingCount`, and returns `{ rating, review, reviewedAt, service: { averageRating, ratingCount } }`.
+- Public service responses derive `averageRating` (rounded to one decimal, `0` when unrated) and `ratingCount` from the service aggregates; `sort=rating_desc` is available on `GET /api/services`.
+- `GET /api/services/:id/reviews` returns only `rating`, `review`, `reviewedAt` and a first-name-only `customerName` (or `"Customer"`). Emails, user IDs and payment identifiers are never returned.
+- `GET /api/bookings/:id/invoice` streams an in-memory PDF with a deterministic `invoice-<number>.pdf` filename. It is available only to the booking's customer and only after payment.
 
 ## Test credentials
 
@@ -143,14 +137,14 @@ Sign in through the client's BetterAuth endpoint to obtain the bearer token. The
 ## Testing Stripe locally
 
 ```bash
-stripe listen --forward-to localhost:5000/api/webhooks/stripe
+stripe listen --forward-to localhost:5000/api/webhook/stripe
 ```
 
-Copy the printed `whsec_...` value into `STRIPE_WEBHOOK_SECRET`, create a recurring Price (`price_...`, not `prod_...`) and set its ID as `STRIPE_PRO_PRICE_ID`, then sign in as a technician and start checkout. Use test card `4242 4242 4242 4242` with any future expiry and any CVC. `checkout.session.completed` upgrades the account; the first `invoice.payment_succeeded` records the subscription payment and renewal date. The client redirects to `/dashboard/technician/subscription/success?session_id=...` (bookings use `/dashboard/customer/payments/success?session_id=...`). The success page polls the read-only verify endpoint every 2 seconds for up to ~30 seconds while the webhook catches up. Refreshing the page, using a missing/wrong session ID, and opening another user's session ID are all handled by the same page.
+Copy the printed `whsec_...` value into `STRIPE_WEBHOOK_SECRET`, then sign in as a customer, complete a booking and start Checkout for it. Use test card `4242 4242 4242 4242` with any future expiry and any CVC. The signature-verified `checkout.session.completed` webhook records the booking payment exactly once. The client redirects to `/dashboard/customer/payments/success?session_id=...`. The success page polls the read-only verify endpoint every 2 seconds for up to ~30 seconds while the webhook catches up. Refreshing the page, using a missing/wrong session ID, and opening another user's session ID are all handled by the same page.
 
 ## npm packages
 
-Packages: `@better-auth/utils`, `cors`, `dotenv`, `express`, `express-rate-limit`, `helmet`, `jsonwebtoken`, `mongodb`, `stripe`, `zod`.
+Packages: `@better-auth/utils`, `cors`, `dotenv`, `express`, `express-rate-limit`, `helmet`, `jsonwebtoken`, `mongodb`, `pdfkit`, `stripe`, `zod`.
 
 No TypeScript build step: the server runs directly as native ES modules with Node.js.
 
@@ -158,10 +152,11 @@ No TypeScript build step: the server runs directly as native ES modules with Nod
 
 - [ ] All environment variables are set on the host; `.env` is not committed.
 - [ ] Production client domain is in `CLIENT_URL`/CORS and in BetterAuth `trustedOrigins`.
-- [ ] Stripe webhook `https://<server>/api/webhook/stripe` registered in test mode; signing secret set.
+- [ ] Stripe webhook `https://<server>/api/webhook/stripe` registered in test mode for `checkout.session.completed`; signing secret set.
 - [ ] No CORS / 404 / 504 errors from the client.
 - [ ] MongoDB Atlas network access allows the host (`0.0.0.0/0` for serverless).
 - [ ] 401 without token and 403 with wrong role verified manually.
 - [ ] Invalid status transitions and payment gate rejections verified manually.
 - [ ] Success page + webhook together create only one payment.
+- [ ] `npm run migrate:ratings` has been run once after deploying (idempotent; no new env vars required).
 - [ ] Seed data is live and demo accounts work.

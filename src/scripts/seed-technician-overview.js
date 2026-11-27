@@ -55,13 +55,12 @@ async function main() {
         email: EMAIL,
         emailVerified: true,
         role: 'technician',
-        plan: 'free',
         createdAt: now,
         updatedAt: now,
     });
     const helperUsers = [
         { id: customerUserId, email: CUSTOMER_EMAIL, name: 'Overview Demo Customer', role: 'customer' },
-        { id: zeroUserId, email: ZERO_EMAIL, name: 'Overview Zero Technician', role: 'technician', plan: 'free' },
+        { id: zeroUserId, email: ZERO_EMAIL, name: 'Overview Zero Technician', role: 'technician' },
     ];
     await users.insertMany(helperUsers.map((user) => ({
         _id: user.id,
@@ -69,7 +68,6 @@ async function main() {
         email: user.email,
         emailVerified: true,
         role: user.role,
-        plan: user.plan,
         createdAt: now,
         updatedAt: now,
     })));
@@ -116,7 +114,7 @@ async function main() {
     }));
     await services.insertMany(serviceDocs);
 
-    const statusPlan = [
+    const statusCounts = [
         ['requested', 5],
         ['accepted', 2],
         ['in-progress', 1],
@@ -124,7 +122,7 @@ async function main() {
         ['cancelled', 1],
     ];
     const bookingDocs = [];
-    for (const [status, count] of statusPlan) {
+    for (const [status, count] of statusCounts) {
         for (let index = 0; index < count; index += 1) {
             const createdAt = monthsAgo(index % 6);
             bookingDocs.push({

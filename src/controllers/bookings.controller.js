@@ -1,10 +1,12 @@
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
-import { bookingsCollection, servicesCollection } from '../config/db.js';
+import { bookingsCollection, paymentsCollection, servicesCollection } from '../config/db.js';
 import { asyncHandler } from '../middlewares/asyncHandler.js';
 import { ACTIVE_BOOKING_STATUSES, assertStatusTransition, } from '../utils/statusRules.js';
 import { badRequest, conflict, forbidden, notFound } from '../utils/errors.js';
-import { parseObjectId } from '../utils/objectId.js';
+import { buildInvoicePdf, formatInvoiceDate, invoiceDateKey } from '../utils/invoice.js';
+import { parseObjectId, toIdString } from '../utils/objectId.js';
+import { hasRating, ratingSummary } from '../utils/ratings.js';
 import { sendSuccess } from '../utils/response.js';
 const idParamSchema = z.object({ id: z.string().min(1) });
 export const createBookingSchema = z.object({
@@ -34,12 +36,72 @@ export const listBookingsQuerySchema = z.object({
         .enum(['requested', 'accepted', 'rejected', 'in-progress', 'completed', 'cancelled'])
         .optional(),
 });
+export const reviewSchema = z.object({
+    rating: z.number().int().min(1).max(5),
+    review: z.string().trim().max(500).optional(),
+});
 export const updateStatusSchema = z.object({
     status: z.enum(['requested', 'accepted', 'rejected', 'in-progress', 'completed', 'cancelled']),
     finalAmount: z.coerce.number().positive().optional(),
 });
 function historyEntry(status) {
     return { status, changedAt: new Date() };
+}
+function bookingIdOrNotFound(value) {
+    if (typeof value !== 'string' || !ObjectId.isValid(value)) {
+        throw notFound('Booking not found');
+    }
+    return new ObjectId(value);
+}
+async function ownedBooking(id, email, message) {
+    const bookings = await bookingsCollection();
+    const booking = await bookings.findOne({ _id: bookingIdOrNotFound(id) });
+    if (!booking)
+        throw notFound('Booking not found');
+    if (String(booking.customerEmail ?? '').toLowerCase() !== email.toLowerCase()) {
+        throw forbidden(message);
+    }
+    return { bookings, booking };
+}
+function assertPaid(booking, message) {
+    if (booking.paymentStatus !== 'paid')
+        throw badRequest(message);
+}
+function safeDate(value, fallback) {
+    const date = value instanceof Date ? value : new Date(value ?? 0);
+    return Number.isNaN(date.getTime()) ? fallback : date;
+}
+function invoiceNumberFor(bookingId, paidAt) {
+    return `FM-${invoiceDateKey(paidAt)}-${toIdString(bookingId)?.slice(-6).toUpperCase() ?? 'BOOKING'}`;
+}
+function logAggregateFailure(bookingId, serviceId, error) {
+    // Identifiers only: never log emails, tokens or payment identifiers.
+    console.error('[fixmate:review] service rating aggregate update failed', {
+        bookingId: toIdString(bookingId),
+        serviceId: toIdString(serviceId),
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
+}
+async function fallbackServiceSummary(bookings, serviceId, rating) {
+    try {
+        const reviewed = await bookings
+            .find({ serviceId, rating: { $exists: true } }, { projection: { rating: 1 } })
+            .toArray();
+        const ratingCount = reviewed.length || 1;
+        const ratingSum = reviewed.reduce((total, item) => {
+            const value = Number(item.rating);
+            return total + (Number.isFinite(value) ? value : 0);
+        }, 0) || rating;
+        return {
+            averageRating: Math.round((ratingSum / ratingCount) * 10) / 10,
+            ratingCount,
+        };
+    }
+    catch {
+        // The review is already saved; a best-effort summary is still preferable
+        // to failing the request because reporting could not be recomputed.
+        return { averageRating: rating, ratingCount: 1 };
+    }
 }
 export const createBooking = asyncHandler(async (req, res) => {
     const input = req.body;
@@ -90,8 +152,106 @@ export const getMyBookings = asyncHandler(async (req, res) => {
     const bookings = await bookingsCollection();
     const filter = { customerEmail: req.user.email.toLowerCase(), ...(status ? { status } : {}) };
     const data = await bookings.find(filter).sort({ createdAt: -1, _id: -1 }).toArray();
-    sendSuccess(res, data);
+    sendSuccess(res, data.map((booking) => ({
+        ...booking,
+        rating: booking.rating ?? null,
+        review: booking.review ?? null,
+        reviewedAt: booking.reviewedAt ?? null,
+        canReview: booking.paymentStatus === 'paid' && !hasRating(booking),
+    })));
 });
+
+export const createBookingReview = asyncHandler(async (req, res) => {
+    const { rating, review } = req.body;
+    const { bookings, booking } = await ownedBooking(
+        req.params.id,
+        req.user.email.toLowerCase(),
+        'You can only review your own bookings',
+    );
+    assertPaid(booking, 'Only paid bookings can be reviewed');
+    if (hasRating(booking))
+        throw conflict('This booking has already been reviewed');
+
+    const reviewedAt = new Date();
+    const result = await bookings.updateOne(
+        {
+            _id: booking._id,
+            customerEmail: booking.customerEmail,
+            paymentStatus: 'paid',
+            rating: { $exists: false },
+        },
+        { $set: { rating, review: review ?? null, reviewedAt } },
+    );
+    if (result.matchedCount === 0)
+        throw conflict('This booking has already been reviewed');
+
+    const services = await servicesCollection();
+    let serviceSummary;
+    try {
+        const aggregate = await services.updateOne(
+            { _id: booking.serviceId },
+            { $inc: { ratingSum: rating, ratingCount: 1 } },
+        );
+        if (!aggregate.matchedCount)
+            throw new Error('Service aggregate target not found');
+        serviceSummary = ratingSummary(await services.findOne({ _id: booking.serviceId }));
+    }
+    catch (error) {
+        logAggregateFailure(booking._id, booking.serviceId, error);
+        // The review stays saved even if reporting could not be updated.
+        serviceSummary = await fallbackServiceSummary(bookings, booking.serviceId, rating);
+    }
+
+    sendSuccess(res, {
+        rating,
+        review: review ?? null,
+        reviewedAt,
+        service: serviceSummary,
+    }, 'Review submitted', 201);
+});
+
+export const getBookingInvoice = asyncHandler(async (req, res) => {
+    const { booking } = await ownedBooking(
+        req.params.id,
+        req.user.email.toLowerCase(),
+        'You can only download invoices for your own bookings',
+    );
+    assertPaid(booking, 'Only paid bookings have an invoice');
+
+    const payments = await paymentsCollection();
+    const payment = await payments.findOne(
+        { bookingId: booking._id },
+        { projection: { paidAt: 1, createdAt: 1, currency: 1 } },
+    );
+    const issueDate = new Date();
+    const paidDate = safeDate(
+        payment?.paidAt ?? booking.paidAt ?? payment?.createdAt ?? booking.updatedAt ?? booking.createdAt,
+        issueDate,
+    );
+    const invoiceNumber = invoiceNumberFor(booking._id, paidDate);
+    const pdf = await buildInvoicePdf({
+        invoiceNumber,
+        issueDate: formatInvoiceDate(issueDate),
+        paidDate: formatInvoiceDate(paidDate),
+        bookingReference: booking.ticketId ?? `FM-${toIdString(booking._id)?.slice(-6).toUpperCase() ?? 'BOOKING'}`,
+        customerName: booking.customerName,
+        customerEmail: booking.customerEmail,
+        technicianName: booking.technicianName,
+        serviceTitle: booking.serviceTitle,
+        category: booking.category,
+        description: booking.problemDescription,
+        amount: booking.finalAmount ?? booking.basePrice ?? 0,
+        currency: payment?.currency ?? 'usd',
+    });
+
+    res
+        .status(200)
+        .set('Content-Type', 'application/pdf')
+        .set('Content-Disposition', `attachment; filename="invoice-${invoiceNumber}.pdf"`)
+        .set('Cache-Control', 'private, no-store')
+        .send(pdf);
+});
+
 function localDateKey(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
@@ -183,6 +343,7 @@ export const cancelBooking = asyncHandler(async (req, res) => {
 export const bookingSchemas = {
     create: createBookingSchema,
     list: listBookingsQuerySchema,
+    review: reviewSchema,
     updateStatus: updateStatusSchema,
     params: idParamSchema,
 };

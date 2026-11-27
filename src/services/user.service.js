@@ -32,8 +32,7 @@ export async function findUserById(id) {
     return findUser(userFilterById(id));
 }
 
-// Subscription webhooks need to update the same collection the account lives
-// in, whether it was created by Express or by BetterAuth.
+// Account lookups must work in either store: Express users or BetterAuth users.
 export async function findUserStoreByEmail(email) {
     return findUserStore({ email: email.trim().toLowerCase() });
 }

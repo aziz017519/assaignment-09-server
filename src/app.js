@@ -29,6 +29,7 @@ export function createApp() {
         },
         methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
         allowedHeaders: ['Content-Type', 'Authorization'],
+        exposedHeaders: ['Content-Disposition'],
         credentials: false,
     }));
     // The webhook needs the untouched raw body for Stripe signature verification.

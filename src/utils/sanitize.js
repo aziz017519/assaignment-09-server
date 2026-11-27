@@ -12,8 +12,6 @@ export function publicUser(user) {
         address: user.address ?? null,
         area: user.area ?? null,
         bio: user.bio ?? null,
-        // The plan is a technician-only concept; never leak it to customers.
-        ...(user.role === 'technician' ? { plan: user.plan ?? 'free' } : {}),
         createdAt: user.createdAt ?? null,
     };
 }

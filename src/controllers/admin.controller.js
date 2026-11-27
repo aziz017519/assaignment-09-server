@@ -51,9 +51,9 @@ const listBookingsSchema = z.object({
 const listTransactionsSchema = z.object({
     search: z.string().trim().max(100).optional(),
     status: z.enum(['paid', 'unpaid', 'pending', 'failed', 'refunded']).optional(),
-    // Payments have no `method` field; this real field is `type` (booking|subscription).
-    method: z.enum(['booking', 'subscription']).optional(),
-    type: z.enum(['booking', 'subscription']).optional(),
+    // Payments have no `method` field; this real field is `type` (booking).
+    method: z.enum(['booking']).optional(),
+    type: z.enum(['booking']).optional(),
     from: dateString.optional(),
     to: dateString.optional(),
     page: z.coerce.number().int().min(1).default(1),
@@ -314,8 +314,8 @@ function publicTransaction(payment) {
         customerEmail: payment.customerEmail ?? null,
         bookingId: toIdString(payment.bookingId) ?? null,
         serviceTitle: payment.serviceTitle ?? null,
-        // Payments have no `method` field. `type` is the real discriminator.
-        type: payment.type === 'subscription' ? 'subscription' : 'booking',
+        // Payments have no `method` field; all payments shown here are bookings.
+        type: 'booking',
         amount: Number(payment.amount ?? 0),
         currency: payment.currency ?? 'usd',
         status,

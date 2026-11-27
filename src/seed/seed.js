@@ -342,7 +342,6 @@ async function seedUsers() {
                 phone: entry.phone,
                 area: entry.area,
                 bio: entry.bio,
-                plan: 'free',
                 createdAt: new Date(),
                 updatedAt: new Date(),
             },

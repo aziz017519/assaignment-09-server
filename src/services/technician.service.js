@@ -3,7 +3,6 @@ import {
     paymentsCollection,
     servicesCollection,
 } from '../config/db.js';
-import { FREE_SERVICE_LIMIT, normalizePlan } from './subscription.service.js';
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const BOOKING_STATUSES = ['requested', 'accepted', 'rejected', 'in-progress', 'completed', 'cancelled'];
@@ -38,7 +37,7 @@ function buildMonthlyRows(rows) {
     });
 }
 
-export async function getTechnicianStats(email, user) {
+export async function getTechnicianStats(email) {
     const technicianEmail = email.toLowerCase();
     const start = chartStartDate();
 
@@ -101,11 +100,9 @@ export async function getTechnicianStats(email, user) {
         (bookingRows[0]?.byStatus ?? []).map((row) => [row._id, row.count]),
     );
     const countFor = (status) => statusCounts.get(status) ?? 0;
-    const plan = normalizePlan(user);
 
     return {
         totalServices,
-        serviceLimit: plan === 'pro' ? null : FREE_SERVICE_LIMIT,
         approvedServices: serviceCounts.get('approved') ?? 0,
         pendingServices: serviceCounts.get('pending') ?? 0,
         pendingRequests: countFor('requested'),

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { bookingSchemas, cancelBooking, createBooking, getBookingStats, getMyBookings, getTechnicianBookings, updateBookingStatus, } from '../controllers/bookings.controller.js';
+import { bookingSchemas, cancelBooking, createBooking, createBookingReview, getBookingInvoice, getBookingStats, getMyBookings, getTechnicianBookings, updateBookingStatus, } from '../controllers/bookings.controller.js';
 import { validate } from '../middlewares/validate.js';
 import { verifyCustomer } from '../middlewares/verifyCustomer.js';
 import { verifyTechnician } from '../middlewares/verifyTechnician.js';
@@ -9,6 +9,8 @@ router.post('/', verifyToken, verifyCustomer, validate({ body: bookingSchemas.cr
 router.get('/my', verifyToken, verifyCustomer, validate({ query: bookingSchemas.list }), getMyBookings);
 router.get('/stats', verifyToken, verifyCustomer, getBookingStats);
 router.get('/technician', verifyToken, verifyTechnician, validate({ query: bookingSchemas.list }), getTechnicianBookings);
+router.post('/:id/review', verifyToken, verifyCustomer, validate({ params: bookingSchemas.params, body: bookingSchemas.review }), createBookingReview);
+router.get('/:id/invoice', verifyToken, verifyCustomer, validate({ params: bookingSchemas.params }), getBookingInvoice);
 router.patch('/:id/cancel', verifyToken, verifyCustomer, validate({ params: bookingSchemas.params }), cancelBooking);
 router.patch('/:id/status', verifyToken, verifyTechnician, validate({ params: bookingSchemas.params, body: bookingSchemas.updateStatus }), updateBookingStatus);
 export default router;

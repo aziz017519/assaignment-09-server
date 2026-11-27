@@ -1,10 +1,10 @@
 import { ObjectId } from 'mongodb';
 import { z } from 'zod';
-import { servicesCollection } from '../config/db.js';
+import { bookingsCollection, servicesCollection } from '../config/db.js';
 import { asyncHandler } from '../middlewares/asyncHandler.js';
-import { FREE_SERVICE_LIMIT, normalizePlan } from '../services/subscription.service.js';
-import { forbidden, notFound, planLimitReached } from '../utils/errors.js';
+import { forbidden, notFound } from '../utils/errors.js';
 import { parseObjectId } from '../utils/objectId.js';
+import { firstName, withRatingSummary } from '../utils/ratings.js';
 import { sendSuccess } from '../utils/response.js';
 import { escapeRegex } from '../utils/search.js';
 import { findUserByEmail } from '../services/user.service.js';
@@ -22,7 +22,11 @@ export const listServicesQuerySchema = z.object({
     search: z.string().trim().max(100).optional(),
     category: categorySchema.optional(),
     serviceMode: serviceModeSchema.optional(),
-    sort: z.enum(['price_asc', 'price_desc', 'newest']).default('newest'),
+    sort: z.enum(['price_asc', 'price_desc', 'newest', 'rating_desc']).default('newest'),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(50).default(12),
+});
+export const serviceReviewsQuerySchema = z.object({
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(50).default(12),
 });
@@ -64,15 +68,27 @@ export const listServices = asyncHandler(async (req, res) => {
             ? { basePrice: -1, _id: 1 }
             : { createdAt: -1, _id: 1 };
     const services = await servicesCollection();
-    const [data, total] = await Promise.all([
-        services
-            .find(filter)
-            .sort(sortSpec)
-            .skip((page - 1) * limit)
-            .limit(limit)
-            .toArray(),
+    // A computed average cannot be sorted with a plain field sort, so
+    // rating_desc derives it first and then paginates in memory.
+    const [documents, total] = await Promise.all([
+        sort === 'rating_desc'
+            ? services.find(filter).toArray()
+            : services
+                .find(filter)
+                .sort(sortSpec)
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .toArray(),
         services.countDocuments(filter),
     ]);
+    let data = documents.map(withRatingSummary);
+    if (sort === 'rating_desc') {
+        data = data
+            .sort((a, b) => b.averageRating - a.averageRating ||
+                b.ratingCount - a.ratingCount ||
+                String(a._id).localeCompare(String(b._id)))
+            .slice((page - 1) * limit, page * limit);
+    }
     sendSuccess(res, {
         data,
         total,
@@ -106,8 +122,44 @@ export const getServiceById = asyncHandler(async (req, res) => {
         if (user)
             service.technician = technicianFromUser(user, service);
     }
-    sendSuccess(res, service);
+    sendSuccess(res, withRatingSummary(service));
 });
+
+export const getServiceReviews = asyncHandler(async (req, res) => {
+    const { page, limit } = req.query;
+    const services = await servicesCollection();
+    const service = await services.findOne(
+        { _id: parseObjectId(req.params.id, 'service id'), ...publicFilter() },
+        { projection: { _id: 1 } },
+    );
+    if (!service)
+        throw notFound('Service not found');
+
+    const bookings = await bookingsCollection();
+    const filter = { serviceId: service._id, rating: { $exists: true } };
+    const [documents, total] = await Promise.all([
+        bookings
+            .find(filter, { projection: { rating: 1, review: 1, reviewedAt: 1, customerName: 1 } })
+            .sort({ reviewedAt: -1, _id: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit)
+            .toArray(),
+        bookings.countDocuments(filter),
+    ]);
+    sendSuccess(res, {
+        data: documents.map((booking) => ({
+            rating: booking.rating,
+            review: booking.review ?? null,
+            reviewedAt: booking.reviewedAt ?? null,
+            customerName: firstName(booking.customerName),
+        })),
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+    });
+});
+
 export const getMyServices = asyncHandler(async (req, res) => {
     const email = req.user.email;
     const services = await servicesCollection();
@@ -121,13 +173,6 @@ export const createService = asyncHandler(async (req, res) => {
     const input = req.body;
     const email = req.user.email.toLowerCase();
     const services = await servicesCollection();
-    // The plan is re-read from the database by verifyTechnician, never from the
-    // client. Pro technicians are unlimited; free technicians stop at 3.
-    if (normalizePlan(req.dbUser) !== 'pro') {
-        const serviceCount = await services.countDocuments({ technicianEmail: email });
-        if (serviceCount >= FREE_SERVICE_LIMIT)
-            throw planLimitReached();
-    }
     const document = {
         _id: new ObjectId(),
         ...input,
@@ -176,6 +221,7 @@ export const toggleAvailability = asyncHandler(async (req, res) => {
 });
 export const serviceSchemas = {
     list: listServicesQuerySchema,
+    reviews: serviceReviewsQuerySchema,
     create: createServiceSchema,
     update: updateServiceSchema,
     availability: availabilitySchema,

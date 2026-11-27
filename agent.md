@@ -81,7 +81,6 @@ BetterAuth auto-creates `session`, `account`, `verification` (not counted). Its 
 
 ### users
 `_id, name, email (unique), image, role ('customer'|'technician'|'admin', default 'customer'), phone, area, bio`
-(Optional: `plan: 'free'|'pro'`.)
 
 ### services
 `_id, title, category, description, image, basePrice (Number), estimatedDuration, serviceMode ('Home Visit'|'Shop Drop-off'), serviceArea, technicianName, technicianEmail, approvalStatus ('pending'|'approved'|'rejected', default 'pending'), isAvailable (Boolean, default true), createdAt (Date)`

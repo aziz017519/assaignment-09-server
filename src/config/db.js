@@ -38,13 +38,12 @@ export const bookingsCollection = () => getCollection(COLLECTIONS.bookings);
 export const paymentsCollection = () => getCollection(COLLECTIONS.payments);
 export const sessionsCollection = () => getCollection(COLLECTIONS.sessions);
 export const accountsCollection = () => getCollection(COLLECTIONS.accounts);
-// Booking payments always have a bookingId/sessionId; subscription payments do
-// not. Partial indexes keep the old uniqueness guarantees without rejecting a
-// second document that simply omits those fields.
+// Booking payments always have a bookingId/sessionId. Partial indexes keep the
+// uniqueness guarantee without rejecting a document that omits those fields.
 async function ensurePaymentIndexes(db) {
     const payments = db.collection(COLLECTIONS.payments);
     const existing = await payments.indexes();
-    const partialIndexes = ['stripeSessionId_1', 'bookingId_1', 'stripeInvoiceId_1'];
+    const partialIndexes = ['stripeSessionId_1', 'bookingId_1'];
     for (const name of partialIndexes) {
         const index = existing.find((item) => item.name === name);
         if (index && !index.partialFilterExpression) {
@@ -60,11 +59,6 @@ async function ensurePaymentIndexes(db) {
             { bookingId: 1 },
             { unique: true, partialFilterExpression: { bookingId: { $exists: true } } },
         ),
-        payments.createIndex(
-            { stripeInvoiceId: 1 },
-            { unique: true, partialFilterExpression: { stripeInvoiceId: { $exists: true } } },
-        ),
-        payments.createIndex({ userId: 1, type: 1, paidAt: -1 }),
     ]);
 }
 export async function createIndexes() {
@@ -85,6 +79,10 @@ export async function createIndexes() {
             customerEmail: 1,
             status: 1,
         }),
+        db.collection(COLLECTIONS.bookings).createIndex(
+            { serviceId: 1, reviewedAt: -1 },
+            { name: 'serviceId_1_reviewedAt_-1' },
+        ),
         db.collection(COLLECTIONS.sessions).createIndex({ token: 1 }, { unique: true }),
         db
             .collection(COLLECTIONS.accounts)

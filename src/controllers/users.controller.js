@@ -46,7 +46,6 @@ export const signup = asyncHandler(async (req, res) => {
         email,
         role,
         emailVerified: false,
-        plan: 'free',
         createdAt: now,
         updatedAt: now,
     };

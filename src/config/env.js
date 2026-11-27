@@ -17,7 +17,6 @@ const envSchema = z.object({
     NEXT_PUBLIC_APP_URL: z.url().default('http://localhost:3000'),
     STRIPE_SECRET_KEY: optionalSecret,
     STRIPE_WEBHOOK_SECRET: optionalSecret,
-    STRIPE_PRO_PRICE_ID: optionalSecret,
     IMGBB_API_KEY: optionalSecret,
     ADMIN_EMAIL: z.email().default('admin@fixmate.test'),
     ADMIN_PASSWORD: z.string().min(8).default('Admin@12345'),
@@ -38,15 +37,6 @@ export function requireStripeConfig() {
         secretKey: env.STRIPE_SECRET_KEY,
         webhookSecret: env.STRIPE_WEBHOOK_SECRET,
     };
-}
-export function requireStripePriceId() {
-    if (!env.STRIPE_PRO_PRICE_ID) {
-        throw new Error('Stripe is not configured. Set STRIPE_PRO_PRICE_ID in .env.');
-    }
-    if (!env.STRIPE_PRO_PRICE_ID.startsWith('price_')) {
-        throw new Error('STRIPE_PRO_PRICE_ID must be a recurring Stripe Price id (price_...), not a product id (prod_...).');
-    }
-    return env.STRIPE_PRO_PRICE_ID;
 }
 export function getAppUrl() {
     return env.NEXT_PUBLIC_APP_URL || env.CLIENT_URL;

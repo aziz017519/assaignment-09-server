@@ -1,5 +1,5 @@
 import Stripe from 'stripe';
-import { env, requireStripeConfig, requireStripePriceId } from './env.js';
+import { env, requireStripeConfig } from './env.js';
 let client = null;
 export function getStripe() {
     if (!env.STRIPE_SECRET_KEY) {
@@ -12,7 +12,4 @@ export function getStripe() {
 }
 export function getWebhookSecret() {
     return requireStripeConfig().webhookSecret;
-}
-export function getProPriceId() {
-    return requireStripePriceId();
 }
